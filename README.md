@@ -8,7 +8,7 @@ Welcome to **The Architect's Vault**, a premier, polyglot repository curated by 
 
 This vault is an expansive collection of real-world projects, services, and systems. It is entirely **stack-agnostic**, featuring full-scale implementations across **all major languages (Node.js/TS, Go, Python, Rust, C++), runtimes (Bun, Deno), and backend ecosystems.** We do not just discuss architecture; we build it...
 
---
+---
 
 ## 🗝️ The Project-First Philosophy
 

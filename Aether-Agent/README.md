@@ -367,4 +367,263 @@ curl -X POST http://localhost:4000/trpc/solana.reportCrisis \
 ```
 With a live validator the signature is a real transaction signature; otherwise it is simulated (prefix `sim_`). `persisted:true` means `crisisId` was given and the signature was written to the Mongo record's `solanaTx` field.
 
-<!-- __CHUNK6__ -->
+## 9. The Agents in Detail
+
+### 9.1 Monitoring Agent — vision pipeline
+
+**Path:** `apps/web` → `monitor.analyzeSatellite` → `services/rustCore.ts` → **rust-core** (`POST /analyze`) → classification → persistence + memory.
+
+**rust-core internals** (`packages/rust-core`):
+
+1. `main.rs` receives `{ image_url }`, downloads the bytes with `reqwest` (rustls), decodes with the `image` crate.
+2. `vision/model.rs` — `SatelliteAnalyzer::extract_features` downsizes the image to 64×64 and computes `ImageFeatures`:
+   - `brightness` — mean Rec.709 luminance (0–1)
+   - `blue_ratio` — fraction of water-like pixels (blue dominates by >15%)
+   - `green_ratio` — vegetation-like pixels
+   - `red_ratio` — burnt/earth-like pixels
+   - `variance` — luminance variance ×4, clamped to 0–1 (texture chaos → rubble/debris)
+3. `processor.rs` — `classify()` scores five hypotheses and picks the winner:
+
+| Crisis | Score formula |
+| --- | --- |
+| Flood | `blue_ratio × 1.5 + (1 − brightness) × 0.5` |
+| Wildfire | `red_ratio × 1.4 + (1 − green_ratio) × 0.6` |
+| Drought | `brightness × 0.8 + (1 − green_ratio) × 0.8 − blue_ratio` |
+| Landslide | `red_ratio × 0.7 + variance × 1.2` |
+| Earthquake | `variance × 1.5 + (1 − blue_ratio) × 0.3` |
+
+   - `severity = clamp(0.35 + best_score × 0.45, 0.1, 0.99)`
+   - `confidence = 0.6 + 0.35 × margin` where `margin = (best − runner_up) / |best|`
+4. **Fallback:** if download/decode fails, `CrisisVerdict::fallback_for(url)` derives a verdict from the FNV-1a hash of the URL — deterministic, offline-friendly.
+
+**Node-side twin:** when rust-core is unreachable, `services/rustCore.ts` produces a hash-based result with the same JSON shape (`severity`, `crisis_type`, `confidence`) — values differ slightly from Rust's (4 crisis types, different ranges) but the contract is identical, so the UI never notices.
+
+> 🔁 **Upgrading to a real ViT:** keep the endpoint contract `{image_url} → {severity, crisis_type, confidence}` and replace `extract_features` with tensor inference (e.g. `tch` + LibTorch or `ort` + ONNX). Nothing else in the stack changes.
+
+### 9.2 Resource Allocation Agent
+
+**Path:** `services/allocation.ts` — a pure function: `(crisisType, severity, affectedPopulation?) → AidPackage`. No I/O, fully auditable:
+
+| Output | Formula |
+| --- | --- |
+| `estimatedPeopleAffected` | provided, else `50 000 × severity²` |
+| `waterLiters` | `people × 9 L × 1.3` if Flood/Tsunami (contaminated sources), else `× 9 L` (3 L/day × 3 days) |
+| `meals` | `people × 9 × 1.5` if Drought (longer duration), else `× 9` (3 meals × 3 days) |
+| `medicalKits` | `people × 0.05 × 1.6` if trauma-heavy (Earthquake, Hurricane, Tornado, Volcanic Eruption), else `× 0.05` |
+| `shelterKits` | `people × 0.2` if displacement-heavy (Earthquake, Wildfire, Flood, Volcanic Eruption), else `× 0.1` |
+| `hygieneKits` | `people × 0.5` |
+| `priority` | `critical ≥ 0.85 > high ≥ 0.65 > medium ≥ 0.4 > low` (on severity) |
+
+The dashboard shows this package for the most severe active crisis (or the latest analysis).
+
+### 9.3 Multi-Modal Memory (embeddings + Milvus)
+
+**Path:** `services/embeddings.ts` + `services/milvus.ts`.
+
+**Embedding algorithm** (deterministic, 768-dim, no model weights):
+1. Tokenise the text (lowercase, strip punctuation).
+2. For each token: FNV-1a hash → seed a Mulberry32 PRNG → add a fixed random projection (`rand() − 0.5`) to all 768 dimensions.
+3. L2-normalise.
+
+Shared tokens ⇒ correlated vectors, so `"flood damage"` lands near stored flood analyses. `embedImage(url, type)` embeds `"satellite image <url> <type>"` — stable for identical inputs.
+
+**Milvus collection `crisis_embeddings`** (created idempotently on boot, RESTful v2 on `MILVUS_URL`):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | Int64 | primary key, autoId |
+| `image_vector` | FloatVector | dim 768, L2 index `image_vec_idx` |
+| `text_vector` | FloatVector | dim 768, L2 index `text_vec_idx` |
+| `crisis_type` | VarChar(64) | scalar metadata |
+| `source` | VarChar(64) | e.g. `satellite` |
+
+**Fallback chain** for `searchSimilar`: Milvus `text_vector` search → MongoDB `$or` regex on `description/type/crisisLabel` → empty result. Never throws.
+
+### 9.4 Communication Agent (Solana)
+
+**Path:** `services/solana.ts` → Solana JSON-RPC (`getHealth`) + the `aether-contracts` Anchor program.
+
+- **With a validator:** `reportCrisis` first probes `getHealth`; a real implementation then submits the Anchor instruction (§11) and returns the transaction signature.
+- **Without a validator:** returns a simulated receipt — `signature: sim_<base36 timestamp>` (or a hash-derived `sim_…` string when the RPC answers but the tx path is not yet wired). The flow, types and UI are identical either way.
+- The receipt (`timestamp` unix-seconds, `signature`) is returned to the caller and, when `crisisId` was supplied and Mongo is up, written to the crisis document's `solanaTx` field.
+
+---
+
+## 10. Frontend Guide
+
+### 10.1 Provider tree & data flow
+
+```text
+layout.tsx → <Providers>            (app/providers.tsx, 'use client')
+  ├─ trpc.Provider  → httpBatchLink(`${API_BASE}/trpc`, credentials:'include')
+  └─ QueryClientProvider
+        └─ page.tsx (the dashboard)
+```
+
+`API_BASE` = `process.env.NEXT_PUBLIC_API_URL ?? http://localhost:4000` (`utils/trpc.ts`), baked in at build time.
+
+### 10.2 Hooks reference
+
+| Hook | File | Purpose |
+| --- | --- | --- |
+| `trpc` | `hooks/useTRPC.ts` | Typed tRPC proxy — `trpc.monitor.getActiveCrises.useQuery(…)` etc. |
+| `useBackendHealth(pollMs=30000)` | `hooks/useTRPC.ts` | Polls REST `/health`; returns `null` (unknown) / `true` / `false` → status badge |
+| `useSolana()` | `hooks/useSolana.ts` | `{ publicKey, balance, connecting, error, walletAvailable, connect, disconnect }` — works with any injected wallet (Phantom), balance via `@solana/web3.js` |
+
+### 10.3 Page behaviour (app/page.tsx)
+
+- `getActiveCrises` + `getStats` polled every **15 s**; mutations invalidate them.
+- `target` = latest analysis result, else the most severe active crisis — drives the allocation panel and on-chain logging.
+- IDs prefixed `seed-` / `mock-` are never sent as `crisisId` (they don't exist in Mongo).
+- All mutations surface errors inline; every section has an empty/loading state.
+
+### 10.4 Components
+
+| Component | Props | Role |
+| --- | --- | --- |
+| `WalletButton` | wallet state + `onConnect/onDisconnect` (state is owned by the page via `useSolana`) | Connect pill / address + SOL balance |
+| `AidDashboard` | `allocation?, isLoading, logging, disabled, onLogOnChain, txSignature?` | Aid-package grid + on-chain logging button + receipt |
+| `MemorySearch` | none (self-contained) | Free-text similarity search over the crisis embedding space |
+
+**Add a panel:** create `components/MyPanel.tsx` (client component, take data via props) → compose it in `page.tsx`. Add data with a tRPC procedure (§12.2) and read it in the page — the types flow automatically.
+
+## 11. Solana Program Guide
+
+**Location:** `packages/solana-program/aether-contracts` (Anchor 0.32.1, program name `aether_contracts`).
+
+**Program ID consistency rule:** `declare_id!` in `programs/aether-agent/src/lib.rs` = `[programs.localnet]` id in `Anchor.toml` = `SOLANA_PROGRAM_ID` in `.env`. Changing one means changing all three and redeploying.
+
+**Instruction — `report_crisis(crisis_type: String, severity: u8)`:**
+
+| Validation | Error |
+| --- | --- |
+| `severity ≤ 100` | `AetherError::SeverityOutOfRange` |
+| `crisis_type.len() ≤ 64` | `AetherError::CrisisTypeTooLong` |
+
+**Account — `CrisisAccount`** (PDA seeds `[b"crisis", authority]`, `init_if_needed`, payer = authority):
+
+| Field | Type | Bytes |
+| --- | --- | --- |
+| discriminator | Anchor | 8 |
+| `authority` | Pubkey | 32 |
+| `crisis_type` | String (≤64) | 4 + 64 |
+| `severity` | u8 | 1 |
+| `timestamp` | i64 (unix, set from `Clock`) | 8 |
+
+Total space `8 + 32 + 4 + 64 + 1 + 8 = 117` bytes. One authority owns exactly one updatable crisis record (hence `init_if_needed` — the `anchor-lang` `init-if-needed` feature is enabled in `programs/aether-agent/Cargo.toml`).
+
+**Tests** (`tests/aether-agent.ts`): records a report, updates the same PDA, and asserts `severity = 200` is rejected with `SeverityOutOfRange`.
+
+**Commands:** `anchor build` → `anchor test` (builds + boots localnet + runs ts-mocha) → `anchor deploy`. Toolchain is pinned by `rust-toolchain.toml` (1.89.0). Requires the Solana CLI and a wallet at `~/.config/solana/id.json` (see `[provider]` in Anchor.toml).
+
+---
+
+## 12. Development Guide for Humans and Agents
+
+### 12.1 Golden rules (invariants — do not break)
+
+1. **`AppRouter` is the API contract.** It is exported from `apps/backend-node/src/trpc/routers/_app.ts` and imported *by source* in `apps/web/src/utils/trpc.ts` (`../../../backend-node/src/trpc/routers/_app`). Never duplicate the type; never break the relative path. Adding/changing a procedure instantly updates frontend types — run `npm run build:web` to see errors.
+2. **Milvus = RESTful v2 on port 9091.** `19530` is gRPC-only. The docker-compose exposes both; do not "fix" `MILVUS_URL` back to 19530.
+3. **Every external integration must degrade.** Any call to Mongo, Milvus, rust-core or Solana is wrapped in try/catch with a documented fallback (§14). New integrations must follow this pattern — the stack must boot with *none* of them running.
+4. **Determinism is a feature.** Mocks and embeddings are hash-based so the same input yields the same output. Never introduce `Math.random()` into analysis paths.
+5. **Response shapes are contracts.** Incident item = `{id, type, severity, location, status, confidence}`. Keep fallback data shape-identical to real data (the UI renders both interchangeably).
+6. **Never commit `.env`** (gitignored) and never hardcode secrets in source.
+7. **Editing files on Windows:** keep UTF-8. Beware PowerShell `Set-Content` without `-Encoding UTF8` (mojibake for emoji/em-dashes), pre-existing BOMs, and invisible zero-width characters in literals (they once hid inside numeric literals and broke the TS build — scan with a regex for `\u200B–\u200F` if you see bizarre syntax errors).
+8. **`npm install` happens at the repo root only** (workspaces). Do not add lockfiles inside workspaces.
+
+### 12.2 Recipe: add a tRPC procedure
+
+1. Add the handler in the relevant router (or create `src/trpc/routers/myRouter.ts` with `export const myRouter = router({ … })`).
+2. Register it in `src/trpc/routers/_app.ts` (`myRouter` → key) — this alone updates `AppRouter` and therefore all frontend types.
+3. Put business logic in `src/services/myService.ts` (routers stay thin; services are testable and I/O-free where possible).
+4. Follow the degradation rule (rule 3) for anything external.
+5. Use it in the web app: `trpc.myRouter.myProcedure.useQuery(input)` — full autocomplete, no client codegen.
+6. Verify: `npm run typecheck && npm run build:web`, then curl it (§8 formats).
+
+### 12.3 Recipe: change the vision model
+
+Edit only `packages/rust-core/src/vision/model.rs` (`extract_features`) and/or `processor.rs` (`classify`). Keep `POST /analyze → {severity, crisis_type, confidence}` untouched, keep the `fallback_for` path, add unit tests next to the existing ones, and run `cargo test --manifest-path packages/rust-core/Cargo.toml`.
+
+### 12.4 Recipe: real Solana transactions
+
+In `services/solana.ts`, after the `getHealth()` probe succeeds, build the Anchor instruction with `@solana/web3.js` + a funded keypair (env-provided), derive the PDA `[b"crisis", authority]`, send it, and return the real signature. Simulated receipts stay as the offline fallback. Keep the response shape `{authority, crisisType, severity, timestamp, signature}`.
+
+### 12.5 Testing strategy
+
+| Layer | How |
+| --- | --- |
+| Types | `npm run typecheck` (backend) + `npm run build:web` (catches cross-app type drift) |
+| Backend live | Boot `node dist/index.js` (or `npm run dev:backend`) and run the §8 curls — every fallback path is exercisable without infra |
+| Rust | `cargo test --manifest-path packages/rust-core/Cargo.toml` (classifier, features, fallback determinism) |
+| Anchor | `anchor test` in `packages/solana-program/aether-contracts` |
+| Frontend e2e | `npm run dev` + browser: badge, analysis, allocation, wallet, memory search |
+
+## 13. Deployment Guide
+
+Free-tier reference setup: **web on Vercel + API on Render**. Thanks to §14, MongoDB/Milvus are optional even in production.
+
+### 13.1 Backend → Render
+
+1. Push this repo to GitHub (remote `origin` already exists).
+2. Render → **New → Web Service** → connect the repo.
+3. **Root Directory:** `apps/backend-node` · **Build:** `npm install && npm run build` · **Start:** `npm run start` · **Health Check Path:** `/health`.
+4. Environment: `WEB_ORIGIN=https://<your-app>.vercel.app` (exact origin — CORS uses it with credentials), `MONGODB_URI=<Atlas connection string>`, optional `MILVUS_URL`, `SOLANA_RPC_URL=https://api.devnet.solana.com`. Render injects `PORT` and the code honours it.
+
+### 13.2 Dashboard → Vercel
+
+1. Vercel → **Add New Project** → import the same GitHub repo.
+2. **Root Directory:** `apps/web` (Vercel detects the workspace root via the repo-root lockfile automatically; if install fails, set Install Command to `npm install` and Build Command to `npm run build`).
+3. Environment (build-time): `NEXT_PUBLIC_API_URL=https://<render-service>.onrender.com`, `NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com`.
+4. Deploy → share `https://<your-app>.vercel.app`.
+
+### 13.3 Optional data services
+
+- **MongoDB Atlas** (free M0) → connection string → `MONGODB_URI`.
+- **Milvus** → Zilliz Cloud serverless or a VM running the same `docker-compose.yml`; expose the **HTTP port** and set `MILVUS_URL`. Skip it initially — the memory search falls back to MongoDB text search automatically.
+- **rust-core** → any host that runs Rust (Railway/Fly/VPS); set `RUST_CORE_URL` on Render. Skip it — the deterministic mock keeps the pipeline alive.
+- **Solana** → devnet RPC works with simulated receipts until a funded keypair is configured (§12.4).
+
+---
+
+## 14. Operational Degradation
+
+| Service down | Behaviour |
+| --- | --- |
+| MongoDB | Crises served from seeded sample data; analyses return `mock-…` ids; warning logged |
+| Milvus | Vector memory skipped; `searchSimilar` falls back to MongoDB text search; `vectorMemory:false` |
+| rust-core | `analyzeSatellite` uses the deterministic Node-side URL-hash mock (identical response shape) |
+| Solana validator | `reportCrisis` returns a simulated `sim_…` signature |
+| Backend entirely | Dashboard renders with a red **Backend offline** badge |
+
+---
+
+## 15. Troubleshooting
+
+| Symptom | Cause & fix |
+| --- | --- |
+| `ERR_CONNECTION_REFUSED` on `localhost:3000` | **The dev server is not running.** `localhost` only responds while `npm run dev` (or `npm run dev:web`) is executing. Start it, then reload. |
+| Dashboard loads but badge says *Backend offline* | Backend not started or wrong `NEXT_PUBLIC_API_URL`. Check `curl http://localhost:4000/health`. |
+| Port already in use (`EADDRINUSE`) | Another process owns 3000/4000/50051. Stop it (`taskkill /F /IM node.exe` on Windows) or change the `PORT` env. |
+| Browser console shows tRPC fetch failures | Backend down, or `WEB_ORIGIN` (CORS) doesn't exactly match the frontend origin (credentials mode). |
+| Milvus calls always fail | Expected without Docker (`npm run docker:up`). If it's running, remember the REST API lives on **9091**, not 19530. |
+| `npm install` prints `npm warn allow-scripts … sharp` | Benign npm install-script policy notice; builds still work. |
+| Next build fails fetching Geist font | `next/font/google` needs network access at build time. |
+| Anchor build errors | Solana CLI / Anchor 0.32.1 missing, or `~/.config/solana/id.json` wallet absent. |
+| Weird TS syntax errors that look fine | Scan the file for invisible characters (`\u200B`–`\u200F`) — see §12.1 rule 7. |
+
+## 16. Roadmap
+
+  * Load real ViT weights into rust-core — the `SatelliteAnalyzer` API is already shaped for it (§12.3)
+  * Replace the deterministic embedder with a sentence-transformer + CLIP pairing (keep the 768-dim contract)
+  * Real Anchor transactions from `services/solana.ts` once a funded keypair is configured (§12.4)
+  * WebSocket push updates instead of 15 s polling
+  * Sentinel Hub / NASA GIBS / news ingestion using the reserved API keys in `.env.example`
+  * Auth in the tRPC context (the context already carries `req`/`res` for sessions)
+
+## 17. License
+
+MIT — see `package.json`.
+
+---
+
+*Maintained by Saad Salman Akram · built as a blueprint for Agentic AI systems that perceive the physical world (satellite) and act in the financial world (Solana).*

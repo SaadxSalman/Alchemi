@@ -190,4 +190,181 @@ Aether-Agent/
 │       └── tests/aether-agent.ts # ts-mocha integration tests (record/update/reject)
 ```
 
-<!-- __CHUNK4__ -->
+## 6. Getting Started
+
+### 6.1 Prerequisites
+
+| Tool | Required? | Used for |
+| --- | --- | --- |
+| **Node.js ≥ 20** + npm | ✅ required | Backend orchestrator + Next.js dashboard |
+| Docker | optional | MongoDB, Milvus, etcd, MinIO containers |
+| Rust ≥ 1.75 (cargo) | optional | The rust-core vision service |
+| Solana CLI + Anchor ≥ 0.32 | optional | Building/deploying the on-chain program |
+
+> Every optional service degrades gracefully — the full stack runs with **only Node.js installed**.
+
+### 6.2 Quickstart (3 commands)
+
+```bash
+npm install          # installs all workspaces (hoisted to repo root)
+npm run docker:up    # OPTIONAL: MongoDB + Milvus + etcd + MinIO
+npm run dev          # backend (:4000) + web (:3000), colour-coded logs
+```
+
+Open **http://localhost:3000** 🎉 — the dashboard works immediately with seeded data.
+`Ctrl+C` stops `npm run dev`. To run the services separately: `npm run dev:backend` / `npm run dev:web`.
+
+### 6.3 Optional: the Rust AI core (real image analysis)
+
+```bash
+npm run build:rust   # cargo build --release
+npm run run:rust     # serves http://localhost:50051 (POST /analyze, GET /health)
+```
+
+Without it, `analyzeSatellite` uses a deterministic Node-side mock — same response shape, so the UI is unaffected. The Rust service loads **no model weights**: it downloads the image, computes pixel statistics and classifies (§9.1). Swapping in a real ViT later touches only `packages/rust-core/src/vision/model.rs`.
+
+### 6.4 Optional: Solana program
+
+```bash
+cd packages/solana-program/aether-contracts
+anchor build         # compiles the Anchor program
+anchor test          # builds, starts a local validator, runs the ts-mocha suite
+anchor deploy        # deploys to the configured cluster (localnet by default)
+```
+
+Without a validator, on-chain logging returns simulated signatures (§9.4) — the whole UI flow still works.
+
+### 6.5 Verify your install
+
+```bash
+curl http://localhost:4000/health
+# → {"status":"ok","service":"aether-backend","timestamp":"…"}
+
+curl http://localhost:4000/trpc/monitor.getActiveCrises
+# → {"result":{"data":[ … seeded crises … ]}}
+```
+
+Then in the browser: check the badge says **Real-time monitoring**, submit the analysis form, connect a wallet, press **Log Crisis On-Chain**.
+
+### 6.6 Dev/test commands
+
+| Command | Action |
+| --- | --- |
+| `npm run dev` | Backend + web concurrently (colour-coded logs) |
+| `npm run build` | Build backend (`tsc`) then web (`next build`) |
+| `npm run typecheck` | Strict TS check of the backend |
+| `npm run build:rust` / `npm run run:rust` | Build / run the Rust core |
+| `cargo test --manifest-path packages/rust-core/Cargo.toml` | Rust unit tests (classifier, features, fallback) |
+| `npm run docker:up` / `npm run docker:down` | Start / stop the infra containers |
+
+---
+
+## 7. Configuration
+
+The backend loads `apps/backend-node/.env` first, then the **repo-root `.env`** (no overrides). Copy `.env.example` → `.env` and adjust:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `4000` | Backend port (Render/PaaS inject this automatically) |
+| `WEB_ORIGIN` | `http://localhost:3000` | CORS origin for the dashboard (must match exactly; credentials are enabled) |
+| `MONGODB_URI` | `mongodb://localhost:27017/aether-agent` | Crisis history store |
+| `RUST_CORE_URL` | `http://localhost:50051` | Rust AI core endpoint |
+| `MILVUS_URL` | `http://localhost:9091` | Milvus **RESTful v2** HTTP port — *not* the gRPC port 19530 |
+| `SOLANA_RPC_URL` | `http://127.0.0.1:8899` | Solana RPC endpoint |
+| `SOLANA_PROGRAM_ID` | `G4ssk…3Pnd` | aether-contracts program address |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | Backend URL baked into the web bundle at **build time** |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | `https://api.devnet.solana.com` | Wallet balance lookups in the browser |
+| `RUST_CORE_PORT` | `50051` | Port the Rust service binds (read by rust-core itself) |
+| `SENTINEL_HUB_API_KEY` etc. | unset | Reserved for real satellite/news ingestion (roadmap) |
+
+> `NEXT_PUBLIC_*` variables are inlined by Next.js **at build time** — changing them requires a rebuild/redeploy.
+
+## 8. API Reference
+
+Base URL: `http://localhost:4000`. tRPC is mounted at `/trpc`, REST health at `/health`.
+Procedures are also visible in typed form via `AppRouter` (exported from `apps/backend-node/src/trpc/routers/_app.ts`).
+
+**Call formats** (tRPC v11, no data transformer):
+- Queries (GET): `/trpc/<router>.<procedure>` — with input, append `?input=<URL-encoded JSON>`
+- Mutations (POST): `/trpc/<router>.<procedure>` with the raw input JSON as the body
+- The web client uses batched POSTs (`/trpc?batch=1`) — same procedures
+
+### 8.1 REST
+
+| Endpoint | Response |
+| --- | --- |
+| `GET /health` | `{"status":"ok","service":"aether-backend","timestamp":"2026-09-04T01:34:50.438Z"}` |
+
+### 8.2 monitor router
+
+**`monitor.getActiveCrises`** (query, no input) → array. Active crises from MongoDB; if Mongo is empty/offline, the seeded sample (`fallbackCrises` in `monitor.ts`) is returned.
+
+```bash
+curl http://localhost:4000/trpc/monitor.getActiveCrises
+```
+```json
+[{"id":"seed-1","type":"Flood","severity":0.91,"location":"Lahore, Pakistan",
+  "status":"response-active","confidence":0.94}]
+```
+
+**`monitor.getStats`** (query, no input) → `{ active, critical, mostCommonType, source }` where `source` is `mongodb` or `fallback`.
+
+**`monitor.analyzeSatellite`** (mutation) — the full Vision pipeline. Input: `{ imageUrl: string (must be a valid URL) }`.
+
+```bash
+curl -X POST http://localhost:4000/trpc/monitor.analyzeSatellite \
+  -H "Content-Type: application/json" \
+  -d "{\"imageUrl\":\"https://images.unsplash.com/photo-1500375592092-40eb2168fd21\"}"
+```
+```json
+{"result":{"data":{"id":"66f…","type":"Wildfire","severity":0.61,"confidence":0.76,
+ "status":"monitoring","location":"Auto-detected",
+ "message":"Crisis Wildfire flagged successfully.",
+ "similar":[{"id":"3","distance":0.42,"crisisType":"Wildfire","source":"satellite"}],
+ "vectorMemory":true}}}
+```
+`similar` is empty and `vectorMemory` false when Milvus is offline. Without Mongo the `id` looks like `mock-1788485720899`.
+
+**`monitor.searchSimilar`** (query) — multi-modal memory search. Input: `{ query: string (≥2 chars), limit?: 1–20 (default 5) }`.
+
+```bash
+curl "http://localhost:4000/trpc/monitor.searchSimilar?input=%7B%22query%22%3A%22flood%20damage%22%2C%22limit%22%3A3%7D"
+```
+```json
+{"result":{"data":{"source":"milvus","results":[
+  {"id":"5","distance":0.31,"crisisType":"Flood","source":"satellite"}]}}}
+```
+`source` is `milvus` (vector search) → falls back to `mongodb` (regex text search) → `none`.
+
+### 8.3 allocation router
+
+**`allocation.estimateNeeds`** (query) — Resource Allocation Agent. Input: `{ crisisType: string, severity: 0–1, affectedPopulation?: int }`.
+
+```bash
+curl "http://localhost:4000/trpc/allocation.estimateNeeds?input=%7B%22crisisType%22%3A%22Flood%22%2C%22severity%22%3A0.9%7D"
+```
+```json
+{"result":{"data":{"crisisType":"Flood","severity":0.9,
+ "estimatedPeopleAffected":40500,"waterLiters":473850,"meals":364500,
+ "medicalKits":2025,"shelterKits":8100,"hygieneKits":20250,
+ "priority":"critical"}}}
+```
+
+### 8.4 solana router
+
+**`solana.health`** (query) → `{ online, cluster, programId }`. `online:false` + `cluster:"unreachable"` when no validator/RPC is reachable (normal offline).
+
+**`solana.reportCrisis`** (mutation) — Communication Agent. Input: `{ crisisId?: string, authority: string (32–64 chars), crisisType: string, severity: 0–1 }`.
+
+```bash
+curl -X POST http://localhost:4000/trpc/solana.reportCrisis \
+  -H "Content-Type: application/json" \
+  -d "{\"authority\":\"9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM\",\"crisisType\":\"Flood\",\"severity\":0.9}"
+```
+```json
+{"result":{"data":{"authority":"9WzD…AWWM","crisisType":"Flood","severity":0.9,
+ "timestamp":1788485720,"signature":"sim_1788485720abc","persisted":false}}}
+```
+With a live validator the signature is a real transaction signature; otherwise it is simulated (prefix `sim_`). `persisted:true` means `crisisId` was given and the signature was written to the Mongo record's `solanaTx` field.
+
+<!-- __CHUNK6__ -->

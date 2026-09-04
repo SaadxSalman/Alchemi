@@ -9,10 +9,12 @@ const MONGODB_URI =
 export async function connectDB(): Promise<void> {
   if (mongoose.connection.readyState === 1) return;
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ MongoDB connected');
+    // Short server-selection timeout so queries degrade to fallback data
+    // quickly when MongoDB is not running, instead of hanging ~30s.
+    await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 3000 });
+    console.log('MongoDB connected');
   } catch (err) {
-    console.error('❌ MongoDB connection error:', err);
+    console.error('MongoDB connection error:', err);
     // Do not crash — app should still boot so REST/health endpoints work.
   }
 }

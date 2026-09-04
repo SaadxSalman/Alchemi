@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+out/
+target/
+.anchor/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+*.log
+.DS_Store

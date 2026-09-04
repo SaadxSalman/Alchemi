@@ -5,8 +5,8 @@ import type { CreateExpressContextOptions } from '@trpc/server/adapters/express'
  * In the future we attach auth info here (user sessions etc).
  */
 export declare function createContext({ req, res }: CreateExpressContextOptions): {
-    req: express.Request;
-    res: express.Response;
+    req: import("express").Request<import("express-serve-static-core").ParamsDictionary, any, any, import("qs").ParsedQs, Record<string, any>>;
+    res: import("express").Response<any, Record<string, any>>;
     db: import("mongoose").Connection;
 };
 export type Context = inferAsyncReturnType<typeof createContext>;

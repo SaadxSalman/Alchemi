@@ -8,20 +8,25 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "concurrently -n backend,web -c blue,green \"npm run dev:backend\" \"npm run dev:web\"",
     "dev:backend": "npm run dev --workspace=backend-node",
     "dev:web": "npm run dev --workspace=web",
-    "dev": "concurrently -n backend,web -c blue,green \"npm run dev:backend\" \"npm run dev:web\"",
+    "build": "npm run build:backend && npm run build:web",
     "build:backend": "npm run build --workspace=backend-node",
     "build:web": "npm run build --workspace=web",
     "build:rust": "cargo build --release --manifest-path packages/rust-core/Cargo.toml",
+    "run:rust": "cargo run --release --manifest-path packages/rust-core/Cargo.toml",
     "start:backend": "npm run start --workspace=backend-node",
-    "start:web": "npm run start --workspace=web"
+    "start:web": "npm run start --workspace=web",
+    "typecheck": "npm run typecheck --workspace=backend-node",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/saadxsalman/Aether-Agent.git"
   },
-  "keywords": [
+    "keywords": [
     "humanitarian",
     "ai-agent",
     "disaster-response",
@@ -36,16 +41,7 @@
   },
   "homepage": "https://github.com/saadxsalman/Aether-Agent#readme",
   "devDependencies": {
-    "@types/node": "^25.0.3",
     "concurrently": "^9.1.2",
-    "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "mongoose": "^9.0.2",
-    "zod": "^4.2.1"
   }
 }

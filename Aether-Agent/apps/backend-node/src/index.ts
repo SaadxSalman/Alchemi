@@ -1,13 +1,17 @@
 ﻿import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { resolve } from 'node:path';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import { appRouter } from './trpc/routers/_app';
 import { createContext } from './trpc/context';
 import { connectDB } from './services/db';
 import { milvus } from './services/milvus';
 
+// Load apps/backend-node/.env if present, then the monorepo-root .env
+// (without overriding anything already set) so `npm run dev` just works.
 dotenv.config();
+dotenv.config({ path: resolve(__dirname, '../../../.env') });
 
 const PORT = Number(process.env.PORT ?? 4000);
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? 'http://localhost:3000';

@@ -1,210 +1,193 @@
 # Aether-Agent 🌍🤝
 
-An AI agent designed to revolutionize humanitarian crisis response. Aether-Agent analyzes real-time satellite imagery, social media data, and news reports to detect natural disasters, predict the needs of affected communities, and coordinate a rapid and effective response.
+**An AI agent platform for humanitarian crisis response** — it watches satellite imagery, classifies disasters, predicts what affected communities need, and coordinates aid transparently on Solana.
 
------
+> **This README is self-contained.** Everything a developer — human or AI agent — needs to understand, run, extend, and deploy this project is documented here. No tribal knowledge required.
 
-## ✨ Features
-
-  * **Autonomous Crisis Detection** — the **Monitoring Agent** classifies satellite imagery into crisis types (Flood, Wildfire, Earthquake, …) with severity + confidence, and persists incidents to MongoDB.
-  * **Intelligent Resource Allocation** — the **Resource Allocation Agent** converts a crisis into a concrete, auditable aid package (water, meals, medical / shelter / hygiene kits) with a computed priority level.
-  * **On-the-Ground Coordination** — the **Communication Agent** records crisis reports on **Solana** through the `aether-contracts` Anchor program (PDA per authority, updateable record).
-  * **Satellite Vision Analysis** — the **Rust core** downloads each image, extracts luminance / colour-dominance / texture features (a pure-Rust stand-in for the Vision Transformer) and classifies the damage.
-  * **Multi-Modal Data Synthesis** — every analysis is embedded into a 768-dim vector (image + text) and stored in **Milvus**, so past crises can be recalled by similarity search; falls back to MongoDB text search.
-  * **Typed End-to-End** — the Next.js dashboard talks to the orchestrator over **tRPC**, importing the `AppRouter` type straight from the backend source. No REST clients, no stale DTOs.
-  * **Zero-Config Resilience** — MongoDB, Milvus, the Rust core and Solana are all *optional at runtime*; the stack degrades gracefully (see [Operational Degradation](#-operational-degradation)) and never crashes because an optional service is down.
-
------
-
-## ⚙️ Tech Stack
-
-To build a world-class humanitarian tool like **Aether-Agent**, you are using a "Safety-First, Performance-Driven" stack. By combining **Rust's** computational efficiency with **Node.js's** developer velocity and **Solana's** transparency, you've created a system that is both fast enough for real-time disaster tracking and secure enough for global aid distribution.
-
-### 🛠️ The Comprehensive Aether-Agent Tech Stack
-
-| Layer | Technology | Why it's being used |
-| --- | --- | --- |
-| **Frontend** | **Next.js 16 (App Router)** | Provides high SEO for public crisis reports and fast, server-side rendering for data-heavy dashboards. |
-|  | **Tailwind CSS** | Used for rapid, responsive UI development (crucial for field workers on mobile devices). |
-|  | **TypeScript + tRPC + React Query** | Ensures end-to-end type safety and polling-based "real-time" dashboards without a socket server. |
-| **Backend** | **Node.js (Express)** | Acts as the "Orchestrator," managing user sessions and routing requests between AI and Blockchain. |
-|  | **tRPC** | Provides a "Zero-API" feel by sharing types between the backend and frontend automatically. |
-|  | **Rust (Axum)** | The high-performance engine for heavy CPU tasks like image processing and vector math. |
-| **Databases** | **Milvus (Vector DB)** | Stores multi-modal embeddings from satellite images and news text for rapid similarity search (RESTful v2 API on port 9091). |
-|  | **MongoDB** | Stores traditional relational data like user profiles, crisis history, and logistics metadata. |
-| **Intelligence** | **Vision features (ViT-ready)** | Extracts luminance, colour dominance and texture variance from satellite patches; swap in real ViT weights without touching the API. |
-|  | **Multi-Modal Embeddings** | Maps images and text into a single 768-dim space so "flood photos" and "flood reports" can be compared. |
-| **Blockchain** | **Solana** | Chosen for its high throughput and low fees, making it viable for recording micro-aid transactions. |
-|  | **Anchor Framework** | The "Gold Standard" for writing secure Solana programs in Rust. |
-| **DevOps** | **Docker & Compose** | Ensures the entire stack (Milvus, Mongo, Node) runs identically on your machine and in production. |
+| | |
+| --- | --- |
+| **Repo type** | npm-workspaces monorepo (TypeScript + Rust) |
+| **Stack** | Next.js 16 · tRPC 11 · Express 5 · MongoDB · Milvus 2.4 · Rust/Axum · Solana/Anchor |
+| **Minimum to run** | Node.js ≥ 20 — every other service is optional (graceful degradation) |
+| **Status** | ✅ Functional end-to-end locally · deployment guide included |
 
 ---
 
-### 💡 Why this stack works
+## 📑 Table of Contents
 
-1. **The "Rust-Bridge":** By writing your AI logic in Rust but your API in Node.js, you get the memory efficiency of a pure Python/Node stack without sacrificing ease of use for the frontend.
-2. **Solana's Speed:** Unlike Ethereum, Solana allows your agent to record crisis data on-chain in sub-second time, which is vital when minutes matter in a humanitarian emergency.
-3. **Milvus for Memory:** Traditional databases can't "search" an image. Milvus allows your agent to have a "visual memory" of past disasters to better predict the needs of current ones.
+1. [What is Aether-Agent](#1-what-is-aether-agent)
+2. [Features](#2-features)
+3. [Architecture](#3-architecture)
+4. [Tech Stack](#4-tech-stack)
+5. [Repository Layout](#5-repository-layout)
+6. [Getting Started](#6-getting-started)
+7. [Configuration](#7-configuration)
+8. [API Reference](#8-api-reference)
+9. [The Agents in Detail](#9-the-agents-in-detail)
+10. [Frontend Guide](#10-frontend-guide)
+11. [Solana Program Guide](#11-solana-program-guide)
+12. [Development Guide for Humans and Agents](#12-development-guide-for-humans-and-agents)
+13. [Deployment Guide](#13-deployment-guide)
+14. [Operational Degradation](#14-operational-degradation)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Roadmap](#16-roadmap)
+17. [License](#17-license)
 
-This stack represents the cutting edge of **Agentic AI**. You are moving away from simple "chatbots" toward autonomous systems that can perceive the physical world (via satellite) and act in the financial world (via Solana).
+---
 
------
+## 1. What is Aether-Agent
 
-## 🚀 Getting Started
+Aether-Agent is organised around **three cooperating agents** plus a shared vector memory:
 
-### Prerequisites
-
-| Tool | Required? | Used for |
+| Agent | Job | Where it lives |
 | --- | --- | --- |
-| **Node.js ≥ 20** + npm | ✅ required | Backend orchestrator + Next.js dashboard |
-| **Docker** | optional | MongoDB, Milvus, etcd, MinIO containers |
-| **Rust ≥ 1.75** (cargo) | optional | The rust-core vision/analysis service |
-| **Solana CLI + Anchor ≥ 0.32** | optional | Building & deploying the on-chain program |
+| 🛰️ **Monitoring Agent** | Ingests satellite image URLs → classifies crisis type, severity and confidence → stores incidents | `apps/backend-node` → `packages/rust-core` |
+| 📦 **Resource Allocation Agent** | Turns a crisis into a concrete, auditable aid package (water, meals, kits) with a priority level | `apps/backend-node/src/services/allocation.ts` |
+| 📡 **Communication Agent** | Coordinates on-chain: records crisis reports on Solana so aid flows stay auditable | `apps/backend-node` + Anchor program |
+| 🧠 **Multi-Modal Memory** | Embeds every analysis (image + text) into Milvus so past crises can be recalled by similarity | `services/embeddings.ts` + `services/milvus.ts` |
 
-> Every optional service degrades gracefully — the full stack runs with **only Node.js installed**.
+**The core loop:**
 
-### Installation
+```text
+ satellite image ──▶ classify (Rust vision core) ──▶ store (MongoDB)
+                           │
+                           └─▶ embed (768-dim) ──▶ remember (Milvus) ──▶ recall similar crises
+                                        │
+ crisis record ──▶ predict needs (allocation) ──▶ log on-chain (Solana) ──▶ dashboard
+```
 
-1.  **Install dependencies** (npm workspaces hoist everything to the repo root):
-    ```bash
-    npm install
-    ```
-2.  **(Optional) Start the infrastructure containers** — MongoDB + Milvus + etcd + MinIO:
-    ```bash
-    npm run docker:up        # docker compose up -d
-    ```
-3.  **(Optional) Build & run the Rust AI core:**
-    ```bash
-    npm run build:rust       # cargo build --release
-    npm run run:rust         # serves http://localhost:50051
-    ```
-    Without it, the backend substitutes a deterministic mock analysis so the UI still works end-to-end.
-4.  **(Optional) Build the Solana program** (requires Solana CLI + Anchor):
-    ```bash
-    cd packages/solana-program/aether-contracts
-    anchor build             # then: anchor deploy (localnet)
-    ```
-    Without a validator, on-chain logging returns simulated receipts.
-5.  **Run the full stack:**
-    ```bash
-    npm run dev              # backend (:4000) + web (:3000), concurrently
-    ```
-    Then open **http://localhost:3000** 🎉
+The dashboard (Next.js) is the window into this loop: live incidents, stats, an analysis
+form, predicted aid packages, wallet-connected on-chain logging, and similarity search.
 
-### Configuration
+---
 
-Copy `.env.example` to `.env` and adjust:
+## 2. Features
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `4000` | Backend orchestrator port |
-| `WEB_ORIGIN` | `http://localhost:3000` | CORS origin for the dashboard |
-| `MONGODB_URI` | `mongodb://localhost:27017/aether-agent` | Crisis history store |
-| `RUST_CORE_URL` | `http://localhost:50051` | Rust AI core endpoint |
-| `MILVUS_URL` | `http://localhost:9091` | Milvus **RESTful v2** API (HTTP port, not gRPC 19530) |
-| `SOLANA_RPC_URL` | `http://127.0.0.1:8899` | Solana RPC endpoint |
-| `SOLANA_PROGRAM_ID` | (deployed program) | aether-contracts program address |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | Backend URL baked into the web bundle |
-| `NEXT_PUBLIC_SOLANA_RPC_URL` | `https://api.devnet.solana.com` | Wallet balance lookups in the browser |
+  * **Autonomous crisis detection** — satellite images are classified into Flood, Wildfire, Earthquake, Drought, Landslide and more, each with severity (0–1) and confidence.
+  * **Intelligent resource allocation** — transparent, formula-driven aid estimates a field coordinator can audit before dispatching goods.
+  * **On-chain coordination** — the `aether-contracts` Anchor program stores authority, crisis type, severity and timestamp in a PDA account; works against localnet/devnet or returns simulated receipts offline.
+  * **Satellite vision pipeline** — a pure-Rust feature extractor (luminance, colour dominance, texture variance) standing in for a Vision Transformer, with a drop-in API for real weights.
+  * **Multi-modal memory** — every analysis lands in a 768-dim Milvus collection with both image and text vectors; similarity search degrades to MongoDB text search when Milvus is offline.
+  * **End-to-end type safety** — the dashboard calls tRPC procedures typed by the backend's own `AppRouter`; a backend change breaks the web build, never production.
+  * **Zero-config resilience** — MongoDB, Milvus, rust-core and Solana are all optional at runtime; the stack keeps serving (see §14).
 
-### Usage
+## 3. Architecture
 
-1. Open the dashboard — the stats row and **Active incidents** list come from `monitor.getStats` / `monitor.getActiveCrises` (seeded sample data until MongoDB is up).
-2. Paste a satellite image URL into **Analyze satellite image** and submit → the Monitoring Agent classifies it, stores it, and embeds it into Milvus' vector memory.
-3. The **Resource allocation** panel predicts the aid package (water, meals, kits) for the most severe active crisis.
-4. Click **Connect Wallet** (e.g. Phantom) and then **Log Crisis On-Chain** to record the crisis on Solana — the receipt (signature) is shown in-place and stored on the crisis record.
-5. Use **Multi-modal memory** to search past crises by free text ("flood damage reports") — served by Milvus similarity search, or MongoDB text search when Milvus is offline.
+### 3.1 System diagram
 
------
+```text
+┌────────────────────────── Your browser ──────────────────────────┐
+│  Next.js 16 dashboard (apps/web, port 3000)                      │
+│  app/page.tsx · components/{WalletButton, AidDashboard,          │
+│  MemorySearch} · hooks/{useTRPC, useSolana}                      │
+└──────────────┬───────────────────────────────────────┬───────────┘
+               │ tRPC httpBatchLink (typed)            │ REST /health
+               ▼                                       │
+┌──────────── Node orchestrator (apps/backend-node, :4000) ────────┐
+│  tRPC routers:  monitor · solana · allocation                    │
+│  services:      rustCore · milvus (REST v2) · solana (JSON-RPC)  │
+│                 embeddings · allocation · db (Mongoose)          │
+└────┬──────────────────┬──────────────────┬──────────────┬────────┘
+     │ HTTP /analyze    │ REST v2 :9091    │ JSON-RPC     │ Mongoose
+     ▼                  ▼                  ▼              ▼
+┌───────────┐    ┌────────────┐    ┌────────────┐  ┌──────────┐
+│ rust-core │    │   Milvus   │    │  Solana    │  │ MongoDB  │
+│ Axum :50051│   │ vector DB  │    │ validator  │  │  :27017  │
+└───────────┘    └────────────┘    └────────────┘  └──────────┘
+        every one of these four services is OPTIONAL (see §14)
+```
 
-## 🔌 API Surface
+### 3.2 Request lifecycle — "Run crisis analysis" click
 
-The orchestrator exposes tRPC at **`http://localhost:4000/trpc`** (batch link) and a REST health probe at **`/health`**.
+1. `page.tsx` calls `analyze.mutate({ imageUrl })` → tRPC POST to `/trpc/monitor.analyzeSatellite`.
+2. Backend calls **rust-core** `POST /analyze` (8 s timeout). If Rust is down, a deterministic Node-side mock with the identical response shape is used instead.
+3. Backend embeds the result with `embedText()` + `embedImage()` → two 768-dim vectors.
+4. Backend inserts the vectors into Milvus and searches for similar past crises (best-effort, silently skipped when Milvus is offline).
+5. Backend creates a MongoDB `Crisis` document (best-effort; a `mock-…` id is returned when Mongo is offline).
+6. Response: `{ id, type, severity, confidence, status, location, message, similar[], vectorMemory }`.
+7. React Query invalidates `getActiveCrises` + `getStats` → the dashboard refetches.
+8. The **Resource Allocation** panel recomputes the aid package for the most severe crisis; with a connected wallet, **Log Crisis On-Chain** calls `solana.reportCrisis` and the signature is stored on the crisis record (`solanaTx`).
 
-| Router | Procedure | Type | Description |
-| --- | --- | --- | --- |
-| `monitor` | `getActiveCrises` | query | Active incidents (MongoDB, seeded fallback) |
-| `monitor` | `getStats` | query | Dashboard counters (active / critical / most common type) |
-| `monitor` | `analyzeSatellite` | mutation | Full Vision pipeline → verdict + persistence + vector memory |
-| `monitor` | `searchSimilar` | query | Multi-modal similarity search (Milvus → MongoDB fallback) |
-| `allocation` | `estimateNeeds` | query | Resource Allocation Agent — aid package for a crisis |
-| `solana` | `health` | query | Cluster reachability + program ID |
-| `solana` | `reportCrisis` | mutation | Record a crisis on-chain (simulated without validator) |
+### 3.3 Design decisions — read before changing anything
 
------
-
-## 🩹 Operational Degradation
-
-| Service down | Behaviour |
+| Decision | Why |
 | --- | --- |
-| MongoDB | Crises are served from seeded sample data; analyses return mock IDs; warning logged |
-| Milvus | Vector memory is skipped; `searchSimilar` falls back to MongoDB text search |
-| rust-core | `analyzeSatellite` uses a deterministic URL-hash mock (same output contract) |
-| Solana validator | `reportCrisis` returns a simulated signature prefixed `sim_` |
-| Backend entirely | Dashboard shows a red **Backend offline** badge |
+| tRPC with `AppRouter` imported **directly from backend source** (`apps/web/src/utils/trpc.ts`) | Zero API drift: change a procedure in the backend and the web type-check fails loudly at build time, not in production |
+| Every optional integration wrapped in try/catch with a documented fallback | The demo must never die because Mongo/Milvus/Rust/Solana is offline |
+| Deterministic "AI" (FNV-1a hash mocks + seeded embeddings) | Same input → same output: stable UX, testable, zero API keys |
+| Milvus via RESTful v2 on port **9091**, no SDK | No native/gRPC dependency; the HTTP API is stable and already exposed by docker-compose |
+| Simulated Solana receipts (prefix `sim_`) without a validator | The on-chain flow is demonstrable offline; going live is a one-function change (§12.4) |
+| Polling (React Query, 15 s) instead of WebSockets | Free hosting-friendly; WebSockets are on the roadmap |
 
------
+## 4. Tech Stack
 
-## 📂 File Structure
+A "Safety-First, Performance-Driven" stack: Rust's computational efficiency, Node's developer velocity, Solana's transparency.
+
+| Layer | Technology | Why |
+| --- | --- | --- |
+| **Frontend** | Next.js 16 (App Router, Turbopack) | SSR/SEO for public crisis reports, fast data-heavy dashboards |
+| | Tailwind CSS 4 | Rapid responsive UI for field workers on mobile |
+| | TypeScript + tRPC 11 + React Query 5 | End-to-end typed RPC + caching/polling without a socket server |
+| | React Compiler | Automatic memoization (`babel-plugin-react-compiler`) |
+| **Backend** | Node.js + Express 5 | The orchestrator: sessions, routing between AI, DBs and blockchain |
+| | tRPC 11 (`@trpc/server` express adapter) | "Zero-API" typed procedures shared with the frontend |
+| | Rust (Axum 0.7, Tokio) | High-performance vision feature extraction + classification |
+| **Databases** | Milvus 2.4 (vector DB) | Multi-modal embeddings for similarity search (REST v2 API on :9091) |
+| | MongoDB 7 + Mongoose 9 | Crisis history, logistics metadata, user profiles |
+| **Intelligence** | Pure-Rust vision features (ViT-ready) | Luminance / colour dominance / texture variance from satellite patches |
+| | Deterministic embeddings (768-dim) | Multi-modal space so "flood photos" and "flood reports" are comparable |
+| **Blockchain** | Solana + Anchor 0.32.1 | High throughput, low fees for micro-aid transactions; gold-standard program security |
+| **DevOps** | Docker Compose | Identical Milvus/etcd/MinIO/Mongo stack locally and in production |
+
+**Why this works:** (1) the *Rust bridge* gives memory-efficient AI compute behind a friendly Node API; (2) *Solana's speed* records crisis data on-chain in sub-second time when minutes matter; (3) *Milvus gives the agent a visual memory* — traditional DBs can't "search" an image.
+
+---
+
+## 5. Repository Layout
+
+Every file, one line each — this map + §12 is all an agent needs to navigate.
 
 ```text
 Aether-Agent/
+├── package.json                  # npm workspaces root: apps/* + packages/*, dev/build scripts
+├── docker-compose.yml            # mongo:7, etcd, minio, milvus v2.4.1 standalone
+├── .env / .env.example           # environment template (backend reads it via dotenv)
 ├── apps/
-│   ├── web/                          # Next.js 16 (Frontend)
-│   │   ├── src/
-│   │   │   ├── app/                  # App Router (page, layout, providers)
-│   │   │   ├── components/           # AidDashboard, MemorySearch, WalletButton
-│   │   │   ├── hooks/                # useTRPC (typed client + health), useSolana
-│   │   │   └── utils/                # trpc.ts (client setup + API base)
-│   │   └── public/                   # Assets
-│   └── backend-node/                 # Express (Orchestrator)
-│       ├── src/
-│       │   ├── trpc/                 # tRPC routers: monitor, solana, allocation
-│       │   ├── services/             # db, milvus (REST v2), rustCore, solana,
-│       │   │                         # embeddings, allocation
-│       │   ├── models/               # MongoDB Schemas (Mongoose)
-│       │   └── index.ts              # Entry point
-│       └── tsconfig.json
+│   ├── backend-node/             # Express + tRPC orchestrator (port 4000)
+│   │   ├── src/index.ts          # entry: dotenv, CORS, /health, tRPC middleware, shutdown hooks
+│   │   ├── src/trpc/trpc.ts      # tRPC init (router, publicProcedure)
+│   │   ├── src/trpc/context.ts   # per-request context (req, res, db)
+│   │   ├── src/trpc/routers/_app.ts     # root router — AppRouter type = the API contract
+│   │   ├── src/trpc/routers/monitor.ts  # getActiveCrises, getStats, analyzeSatellite, searchSimilar
+│   │   ├── src/trpc/routers/solana.ts   # health, reportCrisis
+│   │   ├── src/trpc/routers/allocation.ts # estimateNeeds
+│   │   ├── src/services/rustCore.ts     # HTTP client to rust-core + deterministic mock fallback
+│   │   ├── src/services/milvus.ts       # Milvus RESTful v2 client (schema, insert, search, healthz)
+│   │   ├── src/services/solana.ts       # Solana JSON-RPC client + simulated receipts
+│   │   ├── src/services/embeddings.ts   # FNV-1a seeded 768-dim text/image embedders
+│   │   ├── src/services/allocation.ts   # Resource Allocation Agent formulas
+│   │   ├── src/services/db.ts           # Mongoose connection (3s server-selection timeout)
+│   │   └── src/models/crisis.ts         # Crisis schema (type, severity, location, status, solanaTx…)
+│   └── web/                      # Next.js 16 dashboard (port 3000)
+│       ├── src/app/page.tsx      # the whole dashboard (client component)
+│       ├── src/app/layout.tsx    # fonts + <Providers>
+│       ├── src/app/providers.tsx # tRPC client (httpBatchLink) + React Query
+│       ├── src/hooks/useTRPC.ts  # re-exports typed trpc + useBackendHealth()
+│       ├── src/hooks/useSolana.ts# Phantom connect/disconnect + SOL balance
+│       ├── src/components/WalletButton.tsx  # connect / address + balance pill
+│       ├── src/components/AidDashboard.tsx  # allocation grid + "Log Crisis On-Chain"
+│       ├── src/components/MemorySearch.tsx  # free-text similarity search panel
+│       └── src/utils/trpc.ts     # createTRPCReact<AppRouter> + API_BASE
 ├── packages/
-│   ├── rust-core/                    # AI & Vision heavy lifting (Axum)
-│   │   ├── src/
-│   │   │   ├── vision/               # Feature extraction (ViT stand-in)
-│   │   │   ├── processor.rs          # Crisis classification + fallback
-│   │   │   ├── lib.rs                # Library root (unit-tested)
-│   │   │   └── main.rs               # Axum server: POST /analyze, GET /health
-│   │   └── Cargo.toml
-│   └── solana-program/aether-contracts/  # Blockchain Coordination
-│       ├── programs/aether-agent/    # Anchor program: report_crisis (PDA)
-│       ├── tests/                    # ts-mocha integration tests
-│       ├── Anchor.toml               # localnet config (npm)
-│       └── package.json
-├── docker-compose.yml                # MongoDB, Milvus, MinIO, etcd
-├── .env.example                      # Template for all environment variables
-├── package.json                      # Root workspace config + scripts
-└── README.md
+│   ├── rust-core/                # AI & vision service (Axum, port 50051)
+│   │   ├── src/main.rs           # POST /analyze, GET /health, reqwest fetch + fallback
+│   │   ├── src/lib.rs            # library root (pub mod processor, vision)
+│   │   ├── src/processor.rs      # classify() heuristics + CrisisVerdict::fallback_for + tests
+│   │   └── src/vision/model.rs   # SatelliteAnalyzer::extract_features (image → ImageFeatures)
+│   └── solana-program/aether-contracts/
+│       ├── Anchor.toml           # localnet, program id, npm scripts
+│       ├── programs/aether-agent/src/lib.rs  # report_crisis instruction + CrisisAccount PDA
+│       └── tests/aether-agent.ts # ts-mocha integration tests (record/update/reject)
 ```
 
------
-
-## 🧪 Development Scripts
-
-| Command | Action |
-| --- | --- |
-| `npm run dev` | Backend + web concurrently (colour-coded logs) |
-| `npm run dev:backend` / `npm run dev:web` | Individual services |
-| `npm run build` | Build backend (`tsc`) then web (`next build`) |
-| `npm run typecheck` | TypeScript strict check of the backend |
-| `npm run build:rust` / `npm run run:rust` | Build / run the Rust AI core |
-| `npm run docker:up` / `npm run docker:down` | Start / stop MongoDB + Milvus stack |
-
-## 🗺️ Roadmap
-
-  * Load real ViT weights into `rust-core` (the `SatelliteAnalyzer` API is already shaped for it).
-  * Swap the deterministic embedder for a sentence-transformer + CLIP pairing.
-  * Real transaction construction in `services/solana.ts` once a funded keypair is configured.
-  * WebSocket push updates instead of 15s polling.
-  * Sentinel Hub / NASA GIBS ingestion using the optional API keys in `.env.example`.
-
-## 📄 License
-
-MIT — see [package.json](package.json).
+<!-- __CHUNK4__ -->

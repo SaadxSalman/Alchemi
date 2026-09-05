@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { useState } from "react";
-import { trpc, SERVER_URL } from "./utils/trpc";
+import { trpc, SERVER_URL, API_KEY } from "./utils/trpc";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -16,7 +16,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
   const [trpcClient] = useState(() =>
     trpc.createClient({
-      links: [httpBatchLink({ url: `${SERVER_URL}/trpc` })],
+      links: [
+        httpBatchLink({
+          url: `${SERVER_URL}/trpc`,
+          headers: API_KEY ? { "x-api-key": API_KEY } : {},
+        }),
+      ],
     })
   );
 

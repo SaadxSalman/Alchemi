@@ -85,6 +85,7 @@ async function main() {
     console.log(`  health → http://localhost:${env.port}/rest/health`);
     console.log(`  AI bridge → ${env.aiEngineUrl}`);
     console.log(`  env file  → ${env.loadedFrom ?? "(none found — defaults in use)"}`);
+    console.log(`  API key  → ${env.apiKey ? "ENABLED (" + env.apiKey.length + " chars, mutations protected)" : "DISABLED (open access)"}`);
   });
 }
 

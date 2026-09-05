@@ -23,6 +23,7 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_SERVER_URL: process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000",
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "Alchemi",
+    NEXT_PUBLIC_ALCHEMI_API_KEY: process.env.NEXT_PUBLIC_ALCHEMI_API_KEY || "",
   },
 };
 

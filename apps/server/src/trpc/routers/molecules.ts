@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { moleculeRepo } from "../../repositories/moleculeRepo";
 import { pythonBridge } from "../../services/pythonBridge";
-import { publicProcedure, router } from "../trpc";
+import { protectedProcedure, publicProcedure, router } from "../trpc";
 
 const smilesSchema = z
   .string()
@@ -22,7 +22,7 @@ export const moleculesRouter = router({
     })
   ),
 
-  save: publicProcedure
+  save: protectedProcedure
     .input(
       z.object({
         name: z.string().min(1).max(200),
@@ -63,7 +63,7 @@ export const moleculesRouter = router({
       return doc;
     }),
 
-  delete: publicProcedure
+  delete: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ input }) =>
       moleculeRepo.delete(input.id).then((ok) => {

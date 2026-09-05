@@ -1,0 +1,28 @@
+# Alchemi AI Engine — Python dependencies
+# NOTE: install torch (CPU build) from the PyTorch CPU index for lean installs:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# then:  pip install -r requirements.txt
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7
+python-dotenv>=1.0.1
+
+# Cheminformatics
+rdkit>=2024.3.1
+
+# Graph neural network (PyG 2.6+ needs no external torch-scatter/-sparse wheels)
+numpy>=1.26
+networkx>=3.2
+torch>=2.2.0
+torch_geometric>=2.6.0
+
+# LLM / Agentic Reasoning
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+openai>=1.40.0
+
+# HTTP client / tests
+httpx>=0.27.0
+pytest>=8.0.0

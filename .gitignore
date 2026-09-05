@@ -1,0 +1,111 @@
+# ──────────────────────────────────────────────────────────────
+#  Alchemi (Chem-Agent) — .gitignore
+#  Keeps secrets, environments, build artifacts and heavy ML
+#  binaries out of version control.
+# ──────────────────────────────────────────────────────────────
+
+# ── Environment files & SECRETS (never commit!) ───────────────
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+*.pem
+*.key
+secrets.json
+!.env.example
+!**/.env.example
+
+# ── Python virtual environment (holds deps + venv/.env secrets) ─
+venv/
+.venv/
+env/
+ENV/
+pip-log.txt
+
+# ── Python bytecode / caches ───────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+!apps/web/build  # (placeholder — web build is covered below)
+develop-eggs/
+downloads/
+eggs/
+parts/
+sdist/
+wheels/
+*.whl
+.installed.cfg
+MANIFEST
+
+# ── Test / coverage / tooling caches ───────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# ── Node / Next.js / TypeScript ────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ── ML artifacts (large binaries — regenerate via scripts) ─────
+services/ai-engine/models/checkpoints/
+services/ai-engine/data/*.csv
+services/ai-engine/data/*.parquet
+services/ai-engine/data/*.npz
+!services/ai-engine/data/.gitkeep
+mlruns/
+lightning_logs/
+wandb/
+
+# ── Databases / Docker volumes ─────────────────────────────────
+mongo-data/
+docker/volumes/
+*.mongodb
+*.sqlite
+*.db
+
+# ── Logs & runtime files ───────────────────────────────────────
+logs/
+*.log
+pids/
+*.pid
+*.seed
+
+# ── IDE / Editor / OS ──────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ── Misc ───────────────────────────────────────────────────────
+*.bak
+*.tmp
+~$*
+.claude/

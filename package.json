@@ -1,0 +1,26 @@
+{
+  "name": "alchemi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Alchemi (Chem-Agent) — an AI agent platform that autonomously designs molecules and synthesis pathways.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "install:all": "npm install && npm --prefix apps/server install && npm --prefix apps/web install",
+    "setup:venv": "py -3.13 -m venv venv || py -m venv venv && venv/Scripts/python -m pip install --upgrade pip && venv/Scripts/pip install -r services/ai-engine/requirements.txt",
+    "setup:data": "venv/Scripts/python services/ai-engine/scripts/build_dataset.py",
+    "setup:train": "venv/Scripts/python services/ai-engine/train.py",
+    "dev": "concurrently -n ai,server,web -c yellow,cyan,magenta \"npm:dev:ai\" \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:ai": "venv/Scripts/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir services/ai-engine",
+    "dev:server": "npm --prefix apps/server run dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build": "npm --prefix apps/server run build && npm --prefix apps/web run build",
+    "test": "npm --prefix apps/server run test && venv/Scripts/python -m pytest services/ai-engine/tests -q",
+    "typecheck": "npm --prefix apps/server run typecheck && npm --prefix apps/web run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

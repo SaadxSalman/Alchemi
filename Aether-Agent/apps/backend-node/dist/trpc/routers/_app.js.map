@@ -1,1 +1,0 @@
-{"version":3,"file":"_app.js","sourceRoot":"","sources":["../../../src/trpc/routers/_app.ts"],"names":[],"mappings":";;;AAAA,kCAAiC;AACjC,uCAA0C;AAC1C,qCAAwC;AACxC,6CAAgD;AAEnC,QAAA,SAAS,GAAG,IAAA,aAAM,EAAC;IAC9B,OAAO,EAAE,uBAAa;IACtB,MAAM,EAAE,qBAAY;IACpB,UAAU,EAAE,6BAAgB;CAC7B,CAAC,CAAC"}

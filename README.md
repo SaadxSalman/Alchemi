@@ -3,7 +3,7 @@
 **An autonomous AI chemistry platform** — agents that design novel molecules, predict synthesis
 pathways, and simulate chemical feasibility.
 
-Alchemi (a.k.a. **Chem-Agent**) leverages a **reaction knowledge graph**, a **GATv2 graph neural
+Alchemi leverages a **reaction knowledge graph**, a **GATv2 graph neural
 network**, **RDKit cheminformatics**, and optional **LLM reasoning** (LangChain + OpenAI) to propose
 novel compounds for drug discovery, material science, and other chemical applications. It works
 **fully offline** — every agent falls back to built-in rule-based chemical intelligence when no API

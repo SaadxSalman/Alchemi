@@ -5,6 +5,7 @@
  */
 import mongoose from "mongoose";
 import { env } from "./env";
+import { logger } from "./logger";
 
 export type DbMode = "mongo" | "memory";
 
@@ -21,11 +22,11 @@ export async function connectDatabase(): Promise<DbMode> {
     mongoose.set("strictQuery", true);
     await mongoose.connect(env.mongodbUri, { serverSelectionTimeoutMS: 2500 });
     mode = "mongo";
-    console.log(`[db] MongoDB connected → ${env.mongodbUri.replace(/\/\/.*@/, "//<redacted>@")}`);
+    logger.info({ uri: env.mongodbUri.replace(/\/\/.*@/, "//<redacted>@") }, "MongoDB connected");
   } catch (err) {
     mode = "memory";
     lastError = err instanceof Error ? err.message : String(err);
-    console.warn(`[db] MongoDB unavailable (${lastError}) — using in-memory store`);
+    logger.warn({ err: lastError }, "MongoDB unavailable — using in-memory store");
   }
   return mode;
 }
@@ -33,6 +34,7 @@ export async function connectDatabase(): Promise<DbMode> {
 export async function disconnectDatabase(): Promise<void> {
   if (mongoose.connection.readyState === 1) {
     await mongoose.disconnect();
+    logger.info("MongoDB disconnected");
   }
 }
 

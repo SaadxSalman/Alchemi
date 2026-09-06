@@ -1,9 +1,11 @@
-/** Agents router — the three autonomous agents, bridged to the AI engine. */
-import { TRPCError } from "@trpc/server";
+/** Agents router — the three autonomous agents, bridged to the AI engine.
+ *  Long-running jobs are enqueued via BullMQ; the client polls for results. */
 import { z } from "zod";
 import { runRepo } from "../../repositories/runRepo";
 import { pythonBridge } from "../../services/pythonBridge";
+import { enqueueAgentJob } from "../../queue";
 import { protectedProcedure, publicProcedure, router } from "../trpc";
+import { logger } from "../../logger";
 
 const propertyTargetsSchema = z.object({
   mw_min: z.number().min(10).max(2000).default(150),
@@ -102,7 +104,7 @@ export interface SimulationResultDto {
 }
 
 export const agentsRouter = router({
-  /** Molecule Design Agent — de-novo design against an objective. */
+  /** Molecule Design Agent — enqueues a background job, returns jobId. */
   design: protectedProcedure
     .input(
       z.object({
@@ -121,28 +123,12 @@ export const agentsRouter = router({
         avoid_pains: input.avoidPains,
         ...(input.targets ? { targets: input.targets } : {}),
       };
-      try {
-        const result = (await pythonBridge.design(payload)) as DesignResultDto;
-        const top = result.candidates ?? [];
-        const run = await runRepo.record({
-          agent: "molecule-design",
-          input,
-          summary: result.summary ?? "",
-          resultPreview: {
-            count: top.length,
-            top: top.slice(0, 5).map((c) => ({ smiles: c.smiles, score: c.score })),
-          },
-        });
-        return { ...result, runId: run.id };
-      } catch (err) {
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: err instanceof Error ? err.message : "Design agent failed",
-        });
-      }
+      const result = await enqueueAgentJob("molecule-design", payload);
+      logger.info({ jobId: result.jobId, queued: result.queued }, "design job enqueued");
+      return result;
     }),
 
-  /** Reaction Prediction Agent — retrosynthetic pathway planning. */
+  /** Reaction Prediction Agent — enqueues a background job, returns jobId. */
   predictPathway: protectedProcedure
     .input(
       z.object({
@@ -151,52 +137,20 @@ export const agentsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-        const result = (await pythonBridge.pathway({
-          target_smiles: input.targetSmiles,
-          max_steps: input.maxSteps,
-        })) as PathwayResultDto;
-        await runRepo.record({
-          agent: "reaction-prediction",
-          input,
-          summary: result.narrative ?? "",
-          resultPreview: {
-            isComplete: result.is_complete ?? false,
-            steps: result.steps?.length ?? 0,
-          },
-        });
-        return result;
-      } catch (err) {
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: err instanceof Error ? err.message : "Reaction agent failed",
-        });
-      }
+      const result = await enqueueAgentJob("reaction-prediction", {
+        target_smiles: input.targetSmiles,
+        max_steps: input.maxSteps,
+      });
+      logger.info({ jobId: result.jobId, queued: result.queued }, "pathway job enqueued");
+      return result;
     }),
 
-  /** Simulation Agent — property/feasibility simulation for one molecule. */
+  /** Simulation Agent — enqueues a background job, returns jobId. */
   simulate: protectedProcedure
     .input(z.object({ smiles: z.string().min(1).max(2000) }))
     .mutation(async ({ input }) => {
-      try {
-        const result = (await pythonBridge.simulate(input)) as SimulationResultDto;
-        if (result.valid) {
-          await runRepo.record({
-            agent: "simulation",
-            input,
-            summary: result.narrative ?? "",
-            resultPreview: {
-              smiles: input.smiles,
-              mw: result.descriptors?.molecular_weight ?? null,
-            },
-          });
-        }
-        return result;
-      } catch (err) {
-        throw new TRPCError({
-          code: "BAD_GATEWAY",
-          message: err instanceof Error ? err.message : "Simulation agent failed",
-        });
-      }
+      const result = await enqueueAgentJob("simulation", input);
+      logger.info({ jobId: result.jobId, queued: result.queued }, "simulation job enqueued");
+      return result;
     }),
 });

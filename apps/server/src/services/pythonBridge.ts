@@ -4,6 +4,7 @@
  */
 import axios, { AxiosError } from "axios";
 import { env } from "../env";
+import { logger } from "../logger";
 
 const client = axios.create({
   baseURL: env.aiEngineUrl,
@@ -27,6 +28,7 @@ async function call<T>(fn: () => Promise<{ data: T }>): Promise<T> {
     const res = await fn();
     return res.data;
   } catch (err) {
+    logger.warn({ err: describeError(err) }, "AI bridge call failed");
     throw new Error(describeError(err));
   }
 }

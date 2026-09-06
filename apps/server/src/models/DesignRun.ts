@@ -16,6 +16,9 @@ const DesignRunSchema = new Schema(
   { timestamps: true }
 );
 
+// Compound index for the stats query (agent breakdown over time).
+DesignRunSchema.index({ agent: 1, createdAt: -1 });
+
 export const DesignRunModel =
   (mongoose.models.DesignRun as mongoose.Model<any>) ||
   mongoose.model<any>("DesignRun", DesignRunSchema);

@@ -10,12 +10,17 @@ const MoleculeSchema = new Schema(
       type: String,
       enum: ["manual", "designed", "example"],
       default: "manual",
+      index: true,
     },
-    tags: { type: [String], default: [] },
+    tags: { type: [String], default: [], index: true },
     properties: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
+
+// Compound index for common query patterns.
+MoleculeSchema.index({ source: 1, createdAt: -1 });
+MoleculeSchema.index({ name: "text", description: "text" });
 
 export const MoleculeModel =
   (mongoose.models.Molecule as mongoose.Model<any>) ||

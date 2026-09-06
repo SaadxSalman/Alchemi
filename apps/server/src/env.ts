@@ -45,6 +45,9 @@ export const env = {
   aiEngineUrl: process.env.AI_ENGINE_URL?.trim() || "http://localhost:8000",
   apiKey: process.env.ALCHEMI_API_KEY?.trim() ?? "",
   aiEngineTimeoutMs: int("AI_ENGINE_TIMEOUT_MS", 180_000),
+  redisUrl: process.env.REDIS_URL?.trim() || "redis://localhost:6379",
+  jwtSecret: process.env.JWT_SECRET?.trim() || "dev-secret-change-in-production",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN?.trim() || "7d",
 };
 
 export type Env = typeof env;

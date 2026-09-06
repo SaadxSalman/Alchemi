@@ -3,10 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "../trpc/root";
 import { pythonBridge } from "../services/pythonBridge";
 
-const caller = appRouter.createCaller({ env: {
-  loadedFrom: null, nodeEnv: "test", port: 4000, mongodbUri: "",
-  aiEngineUrl: "http://localhost:59999", apiKey: "", aiEngineTimeoutMs: 1500,
-}, apiKey: undefined });
+const caller = appRouter.createCaller({
+  env: {
+    loadedFrom: null,
+    nodeEnv: "test",
+    port: 4000,
+    mongodbUri: "",
+    aiEngineUrl: "http://localhost:59999",
+    apiKey: "",
+    aiEngineTimeoutMs: 1500,
+    redisUrl: "redis://localhost:59999",
+    jwtSecret: "test-secret",
+    jwtExpiresIn: "1h",
+  },
+  apiKey: undefined,
+});
 
 describe("molecules (in-memory fallback)", () => {
   it("seeds and lists molecules", async () => {
@@ -38,8 +49,6 @@ describe("runs", () => {
 
 describe("health", () => {
   it("degrades gracefully when AI engine is offline", async () => {
-    // The pythonBridge reads the process-level AI_ENGINE_URL (not the caller
-    // env), so stub it to fail regardless of whether the real engine is up.
     const spy = vi
       .spyOn(pythonBridge, "health")
       .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:59999"));
@@ -48,5 +57,26 @@ describe("health", () => {
     expect(h.server).toBe("ok");
     expect(h.db.mode).toBe("memory");
     expect(h.ai.ok).toBe(false);
+  });
+});
+
+describe("auth", () => {
+  it("registers and logs in a user", async () => {
+    const email = `test-${Date.now()}@alchemi.dev`;
+    const reg = await caller.auth.register({ email, password: "securepass123" });
+    expect(reg.token).toBeTruthy();
+    expect(reg.user.email).toBe(email);
+
+    const login = await caller.auth.login({ email, password: "securepass123" });
+    expect(login.token).toBeTruthy();
+    expect(login.user.id).toBe(reg.user.id);
+  });
+
+  it("rejects duplicate registration", async () => {
+    const email = `dup-${Date.now()}@alchemi.dev`;
+    await caller.auth.register({ email, password: "securepass123" });
+    await expect(
+      caller.auth.register({ email, password: "anotherpass123" })
+    ).rejects.toThrow("Email already registered");
   });
 });

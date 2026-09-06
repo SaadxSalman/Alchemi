@@ -33,3 +33,17 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   }
   return next();
 });
+
+/**
+ * Requires a valid JWT Bearer token. Attaches ctx.user.
+ * Use for user-specific operations (my runs, my molecules, profile).
+ */
+export const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authentication required — provide a Bearer token",
+    });
+  }
+  return next();
+});

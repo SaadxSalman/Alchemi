@@ -13,6 +13,20 @@ services:
     volumes:
       - mongo-data:/data/db
 
+  redis:
+    image: redis:7-alpine
+    container_name: alchemi-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   ai-engine:
     build:
       context: ./services/ai-engine
@@ -45,11 +59,15 @@ services:
       MONGODB_URI: mongodb://mongo:27017/alchemi
       AI_ENGINE_URL: http://ai-engine:8000
       ALCHEMI_API_KEY: ${ALCHEMI_API_KEY:-}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
     ports:
       - "4000:4000"
     depends_on:
       mongo:
         condition: service_started
+      redis:
+        condition: service_healthy
       ai-engine:
         condition: service_healthy
 
@@ -69,3 +87,4 @@ services:
 
 volumes:
   mongo-data:
+  redis-data:

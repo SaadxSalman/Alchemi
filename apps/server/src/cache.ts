@@ -25,7 +25,12 @@ export async function connectCache(): Promise<boolean> {
     });
     // Suppress unhandled error events — connection failures are caught below.
     redis.on("error", () => {});
-    await redis.connect();
+    await Promise.race([
+      redis.connect(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Redis connection timeout")), 2000)
+      ),
+    ]);
     connected = true;
     logger.info({ redisUrl: env.redisUrl.replace(/\/\/.*@/, "//<redacted>@") }, "Redis connected");
     return true;

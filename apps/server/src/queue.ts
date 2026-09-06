@@ -134,8 +134,16 @@ export async function initQueue(): Promise<boolean> {
       logger.error({ err: err.message, jobId, agent: job?.data?.agent }, "Job failed");
     });
 
-    await queue.waitUntilReady();
-    await worker.waitUntilReady();
+    // Timeout after 3s — if Redis is down, fail fast to the sync fallback.
+    const withTimeout = <T>(p: Promise<T>, ms: number) =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error("Redis connection timeout")), ms)
+        ),
+      ]);
+    await withTimeout(queue.waitUntilReady(), 3000);
+    await withTimeout(worker.waitUntilReady(), 3000);
     redisAvailable = true;
     logger.info("BullMQ worker ready — async agent jobs enabled");
     return true;
